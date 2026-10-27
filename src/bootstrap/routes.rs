@@ -14,7 +14,7 @@ pub fn routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .merge(health::routes())
         .nest("/api/v1/auth", auth_routes)
-        .nest("/api/v1/users", users::routes())
+        .nest("/api/v1/users/", users::routes())
         .fallback(|| async { AppError::NotFound("Route not found") })
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
 }

@@ -51,7 +51,7 @@ Compose uses its own local PostgreSQL database and applies migrations in a one-s
 | POST | `/api/v1/auth/logout` | Bearer access token, throttled |
 | GET | `/api/v1/users/me` | Signed-in user |
 | PATCH | `/api/v1/users/me` | Signed-in user; `display_name` only |
-| GET | `/api/v1/users` | Admin; `page` and `per_page` |
+| GET | `/api/v1/users/` | Admin; `page` and `per_page` |
 | GET | `/api/v1/users/{id}` | Admin |
 
 Requests with bodies use `Content-Type: application/json`. Authentication uses `Authorization: Bearer <access_token>`. See the [OpenAPI contract](docs/openapi.yaml) for full schemas and error responses.

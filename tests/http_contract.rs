@@ -88,6 +88,13 @@ async fn health_errors_and_security_headers_follow_the_http_contract() {
             StatusCode::UNAUTHORIZED,
             "unauthorized",
         ),
+        ("GET", "/api/v1/users", StatusCode::NOT_FOUND, "not_found"),
+        (
+            "GET",
+            "/api/v1/users/",
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+        ),
         (
             "GET",
             "/health/ready",

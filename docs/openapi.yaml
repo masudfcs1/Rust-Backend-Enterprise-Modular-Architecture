@@ -1,0 +1,597 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Rust Backend
+  version: 0.1.0
+  description: |
+    Modular JSON API backed by PostgreSQL. Successful responses contain `data`;
+    errors contain `error.code` and `error.message`. A server-generated
+    `X-Request-Id` correlates responses with application logs. Responses use
+    `Cache-Control: no-store`.
+
+    Send access tokens in `Authorization: Bearer <access_token>`. Authorization
+    checks the current user role, active status, and session on every request.
+    Refresh tokens rotate on every use and have an absolute session lifetime;
+    rotation does not extend that lifetime. Reusing any consumed refresh token
+    revokes its entire session, including previously issued access tokens.
+    Serialize refresh requests and replace the stored token after each success.
+    If a refresh response is lost, sign in again instead of retrying an old token.
+
+    Authentication routes share a per-socket-IP fixed-window rate limit.
+    Password work has a separate concurrency limit. Either can return 429.
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local development (use HTTPS in deployed environments)
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Users
+security:
+  - BearerAuth: []
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      operationId: liveness
+      summary: Check that the HTTP process is alive
+      security: []
+      responses:
+        '200':
+          description: The HTTP process is serving requests
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                data:
+                  status: ok
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: readiness
+      summary: Check PostgreSQL connectivity
+      description: Runs a database probe with a two-second timeout.
+      security: []
+      responses:
+        '200':
+          description: PostgreSQL is reachable
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                data:
+                  status: ready
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Create a user and initial session atomically
+      description: |
+        Creates an active account with the `user` role. Email comparison is
+        case-insensitive. Role, account status, and other unknown fields are
+        rejected. Account and initial session creation commit together.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/Tokens'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Authenticate and create a session
+      description: Invalid credentials and inactive accounts return the same authentication error.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Tokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refresh
+      summary: Rotate a refresh token and issue an access token
+      description: |
+        Requires a refresh token in the JSON body. An access token is not
+        required. Consumed token reuse revokes the whole session and returns
+        401. Unknown, expired, or revoked tokens also return 401. Malformed
+        token syntax is a validation error. Keep only the replacement refresh
+        token after a successful response; do not refresh concurrently.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Tokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke the current session
+      description: |
+        Requires a currently valid access token. Revokes the session used for
+        this request, immediately invalidating its access and refresh tokens.
+        Other sessions belonging to the user remain active. No request body is
+        required. Repeating logout with the revoked token returns 401.
+      responses:
+        '204':
+          description: Session revoked; no response body
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      operationId: currentUser
+      summary: Get the authenticated user's profile
+      responses:
+        '200':
+          $ref: '#/components/responses/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+    patch:
+      tags: [Users]
+      operationId: updateCurrentUser
+      summary: Update the authenticated user's display name
+      description: |
+        Only display_name can be changed. Unknown fields, including email,
+        password, role, and is_active, are rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/users/:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List user profiles (admin only)
+      description: The current database role must be admin. The trailing slash is required.
+      parameters:
+        - name: page
+          in: query
+          description: One-based page number
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: A page of user profiles
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      operationId: getUserById
+      summary: Get a user profile by ID (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/UnexpectedError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: HS256 access JWT; session and current account state are verified on each request.
+  headers:
+    RequestId:
+      description: Server-generated identifier for correlating logs
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, display_name, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          example: member@example.com
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Trimmed before storage; must be nonblank and contain no control characters.
+          example: Example Member
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 12
+          maxLength: 128
+          description: At least 12 Unicode characters and at most 128 UTF-8 bytes. Never truncated or trimmed.
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
+          description: At most 128 UTF-8 bytes. Compared exactly, without trimming.
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          writeOnly: true
+          minLength: 64
+          maxLength: 64
+          pattern: '^[0-9a-fA-F]{64}$'
+          description: Opaque case-sensitive refresh token from the latest token response.
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          description: After trimming, must contain 1 to 100 Unicode characters and no control characters.
+          example: Updated Member
+    User:
+      type: object
+      required: [id, email, display_name, role, is_active, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TokenResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [access_token, refresh_token, token_type, expires_in, user]
+          properties:
+            access_token:
+              type: string
+              description: Short-lived access JWT
+            refresh_token:
+              type: string
+              minLength: 64
+              maxLength: 64
+              description: Opaque single-use refresh token; store securely and replace after rotation.
+            token_type:
+              type: string
+              const: Bearer
+            expires_in:
+              type: integer
+              minimum: 1
+              description: Access token lifetime in seconds; capped by the session's remaining lifetime.
+            user:
+              $ref: '#/components/schemas/User'
+    UserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+    UserListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, page, per_page, total]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+            page:
+              type: integer
+              minimum: 1
+            per_page:
+              type: integer
+              minimum: 1
+              maximum: 100
+            total:
+              type: integer
+              format: int64
+              minimum: 0
+    HealthResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [ok, ready]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - validation_error
+                - unauthorized
+                - forbidden
+                - not_found
+                - conflict
+                - internal_error
+                - unavailable
+                - rate_limited
+                - payload_too_large
+                - unsupported_media_type
+                - request_timeout
+                - method_not_allowed
+            message:
+              type: string
+  responses:
+    Tokens:
+      description: Access and refresh tokens for the active session
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TokenResponse'
+    User:
+      description: Public user profile, excluding credential hashes
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UserResponse'
+    Unauthorized:
+      description: Credentials are invalid, or the account or session is inactive, expired, or revoked
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: The current user lacks the required administrator role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: The requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: An account with this case-insensitive email already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: Request body exceeds the configured byte limit (16384 bytes by default)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnsupportedMediaType:
+      description: A JSON body requires Content-Type application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Malformed JSON, unknown fields, invalid path or query values, or invalid field values
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Authentication request quota or password-processing capacity has been exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before trying again
+          schema:
+            type: string
+            const: '60'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: Database connectivity or a required service is temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnexpectedError:
+      description: |
+        Standard error envelope for other failures, including request timeout
+        (408) and internal server error (500). Unsupported HTTP methods return
+        405 and unknown routes return 404 using the same error format.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

@@ -1,0 +1,10 @@
+/target/
+/.tooling/
+.env
+!.env.example
+*.log
+*.pem
+*.key
+.DS_Store
+.idea/
+.vscode/

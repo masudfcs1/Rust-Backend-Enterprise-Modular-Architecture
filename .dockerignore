@@ -1,0 +1,9 @@
+target
+.tooling
+.git
+.github
+.env
+.env.*
+*.log
+*.pem
+*.key

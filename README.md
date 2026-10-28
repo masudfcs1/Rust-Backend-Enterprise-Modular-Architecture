@@ -4,7 +4,7 @@ A runnable modular monolith built with Rust, Axum, Tokio, PostgreSQL, and SQLx. 
 
 ## Included
 
-- Registration and login with Argon2id password hashing on bounded blocking workers.
+- Registration and login with Argon2id password hashing on bounded blocking workers...
 - Short-lived, signed JWT access tokens with issuer, audience, algorithm, and expiry validation.
 - Random refresh tokens stored as SHA-256 hashes, transactional rotation, replay detection, and session logout.
 - Atomic account/session creation. Revoked sessions and disabled accounts cannot use existing access tokens; roles are read from the database on each authenticated request.

@@ -64,7 +64,7 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 
 Successful JSON responses use `{"data": ...}`. Errors use `{"error":{"code":"unauthorized","message":"..."}}`. Every response carries `X-Request-ID` and `Cache-Control: no-store`; logout returns an empty 204 response. Validation returns 422, missing or invalid authentication 401, insufficient permissions 403, and duplicates 409.
 
-All new accounts have the `user` role. Promote an initial administrator through a controlled database operation described in [operations](docs/operations.md); there is no default admin password or public role-setting endpoint.
+All new accounts have the `user` role. Promote an initial administrator through a controlled database operation described in [operations](docs/operations.md); there is no default admin password or public role-setting endpoint...
 
 ## Verify
 

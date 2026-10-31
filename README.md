@@ -8,7 +8,7 @@ A runnable modular monolith built with Rust, Axum, Tokio, PostgreSQL, and SQLx. 
 - Short-lived, signed JWT access tokens with issuer, audience, algorithm, and expiry validation.
 - Random refresh tokens stored as SHA-256 hashes, transactional rotation, replay detection, and session logout.
 - Atomic account/session creation. Revoked sessions and disabled accounts cannot use existing access tokens; roles are read from the database on each authenticated request.
-- Self-service profile updates and admin-only user listing and lookup. Public requests cannot set roles.
+- Self-service profile updates and admin-only user listing and lookup. Public requests cannot set roles...
 - Strict configuration, validated JSON, consistent errors, bounded pagination, request IDs, structured logs, CORS allowlist, request timeouts, and peer-IP auth throttling.
 - Embedded migrations, isolated database integration tests, a non-root Docker image, local Compose services, and CI checks.
 
@@ -27,7 +27,7 @@ cargo run --locked -- serve
 
 For a fresh clone, copy `.env.example` to `.env`, set your database URL, and replace `JWT_SECRET` with at least 32 random bytes, such as the output of `openssl rand -hex 32`. The example secret deliberately fails startup validation. The server defaults to `http://127.0.0.1:3000`.
 
-Migrations use `DATABASE_URL_UNPOOLED` when present. On Neon, use its direct endpoint for migrations and its pooled endpoint for application traffic. Serving never applies migrations implicitly.
+Migrations use `DATABASE_URL_UNPOOLED` when present. On Neon, use its direct endpoint for migrations and its pooled endpoint for application traffic. Serving never applies migrations implicitly...
 
 ## Local PostgreSQL with Docker
 

@@ -26,7 +26,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TEST_DATABASE_URL: postgres://postgres:integration-test-only@localhost:5432/enterprise_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy

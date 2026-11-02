@@ -8,7 +8,7 @@ description = "A modular Axum backend with PostgreSQL, session-based JWT authent
 default-run = "enterprise-rust-backend"
 
 [dependencies]
-argon2 = "0.5"
+argon2 = "0.6"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
